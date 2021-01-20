@@ -1,0 +1,473 @@
+exx.e-shop
+создаем проект:
+    mkdir e_shop
+    cd e_shop
+    python3 -m venv env
+    source env/bin/activate
+    nano requirements.txt
+        django==3.1
+        djangorestframework==3.11.1
+        pillow==7.1
+        pytils==0.3
+        (python-decouple - по желанию)
+        (mysqlclient - если бд mysql)
+    (sudo apt install python3-dev libmysqlclient-dev default-libmysqlclient-dev - если бд mysql)
+    pip3 install -r requirements.txt
+    django-admin startproject e_shop_api
+    python3 manage.py startapp account
+    python3 manage.py startapp product
+    python3 manage.py startapp order
+
+__________________________________________
+Структура проекта
+
+APP_1
+Product
+ -> title
+ -> description
+ -> price
+ -> category (FK) (many to many categoty) (акции, одновременное отношение к двум)
+ -> slug/uuid (PK) (one to many order)
+
+ProductImage
+ -> image
+ -> product (FK) (many to one product)
+
+
+Category
+ -> title
+ -> slug (PK)
+
+
+APP_2
+
+Order
+ -> uuid (PK)
+ -> username (FK) (many to one user)
+ -> userphone 
+ -> comment
+ -> date
+ -> payment
+ -> adress
+ -> status
+ -> total price
+ 
+OrderItem
+ -> Product (FK) (many to one product)
+ -> order (FK) (many to one order)
+ -> quantity
+ -> price at the moment
+
+APP_3
+Account
+
+
+_________________________
+
+Дополнили Installed_App приложения account, order, product
+Создаем кастомного юзера до миграции 
+
+% blank=True на уровне заполнения в формочках необязателен
+% null=True на уровне базы данных необязателен
+% если только blank=True , то в бд будет передана пустая строка
+
+делаем миграцию
+проверяем админку
+
+username: admin
+email: admin@admin.com
+password: adminadmin
+
+% В AbstractUser есть автоматически поля firstname, lastname  и т.д. А в AbstractBaseUser есть только то, что мы прописали.
+
+% Все модельки в django наследуются от класса models.Model
+
+% В slugfield только буквы, числа и андескор, а в charfield еще другие символы
+
+
+создали модельки продуктов, категорий и картинок
+добавили в админ.ру
+
+        from django.contrib import admin
+        from .models import Category, Product, ProductImage
+
+        class ImageInline(admin.TabularInline):
+            model = ProductImage
+            extra = 3
+            fields = ('image', ) # list or tuple
+
+        class ProductAdmin(admin.ModelAdmin):
+            inlines = [
+                ImageInline
+            ]
+            list_display = ('id', 'title', 'price')
+            list_display_links = ('id', 'title')
+            
+        admin.site.register(Category)
+        admin.site.register(Product, ProductAdmin)
+
+
+
+В админке нужно отдельно продукт добавлять, отдельно картинки. Для удобства в админ панели добавляем модель дополнения параметров продукта картинкой (чтобы не было отдельно) TabularInline внутри админ.ру
+
+C помощью list_display при входе в product в админке можно вывести нужные графы
+С помощью list_display_links сделать их кликабельными
+
+_____________________________________________
+пишем вьюшку через функции
+        from rest_framework.decorators import api_view
+        from rest_framework.response import Response
+        импорт модельки
+        @api_view(['GET'])
+        def product_list(request):
+            products = Product.objects.all()
+            serializer = ProductSerializer(products, many=True) #many говорит что там мб много продуктов
+            return Response(serializer.data)
+
+
+у нас нет сериализатора
+______________________________________________
+Сериализатор - конвертирует в json формат для отправления фронту
+
+Создаем файл сериалайзера 
+% если serializers.Serializer - прописываем сами все пункты, если serializers.ModelSerializer уде прописано все (как с AbstractUser - прописано все, в AbstractBaseUser - сами прописываем)
+
+%Для валидации определенного поля в формах используется clean_username (для юзернэйма), а в сериалайзере используется validate_title (для тайтла)
+%Для валидации всех полей в формах используется метод clean, а в сериалайзере - validate
+
+        from rest_framework import serializers
+        class ProductSerializer(serializers.Serializer):
+            id = serializers.IntegerField()
+            title = serializers.CharField()
+            description = serializers.CharField()
+            price = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+добавляем url-ки
+
+
+открываем postman
+запрос GET -> прописываем url -> send
+
+
+______________________
+Вьюшка через класс
+Если ListAPIView - более готовый класс, чем APIView. APIView - родительский.
+
+через APIView
+        from rest_framework.views import APIView
+        class ProductsList(APIView):
+            def get(self, request):
+                products = Product.objects.all()
+                serializer = ProductSerializer(products, many=True) #many говорит что там мб много продуктов
+                return Response(serializer.data)
+
+
+через ListAPIView
+        from rest_framework.generics import ListAPIView
+        class ProductsList(ListAPIView):
+            queryset = Product.objects.all()
+            serializer_class = ProductSerializer
+
+
+% Product.objects.all() - это queryset (не список) - набор объектов из базы данных
+
+________________
+Detail продукта
+импорт RetrieveAPIView из generics
+
+        class ProductDetail(RetrieveAPIView):
+            queryset = Product.objects.all()
+            serializer_class = ProductSerializer
+
+поменяем сериалайзер для удобства (родительский класс ModelSerializer)
+        from .models import Product
+        class ProductSerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Product
+                fields = '__all__'
+
+_____________________________
+список категорий
+
+        class CategoriesList(ListAPIView):
+            queryset = Category.objects.all()
+            serializer_class = CategorySerializer
+
+создаем сериалайзер
+
+        class CategorySerializer(serializers.ModelSerializer):
+            class Meta:
+                model = Category
+                fields = '__all__'
+
+обновляем урлы
+
+        path('<inc:pk>/', ProductDetail.as_view()),
+        path('categories/', CategoriesList.as_view()),
+
+меняем в модельке продукта primary_key - добавляем uuid
+удаляем предыдущие миграции initial и db т.к изменили
+
+меняем в админке и в urls id на uuid
+
+пишем функцию автоматической генерации слага
+        from pytils.translit import slugify
+        from time import time
+        def gen_slug(s):
+            slug = slugify(s)
+            return slug + '-' + str(int(time()))
+
+в классе категорий добаавить
+        def save(self):
+            if not self.slug:
+                self.slug = gen_slug(self.name)
+            super().save()
+
+в requirements.txt дописать и установить pytils
+множественное число в категориях
+        class Meta:
+            verbose_name = 'Category'
+            verbose_name_plural = 'Categories'
+
+
+
+
+в категориях и продуктах blank=True в slug и uuid
+мигрируем 
+создаем суперюзера снова (т.к удалили бд)
+
+
+-> Что такое queryset - это набор данных из базы данных ?через ORM? 
+-> Какие методы есть - all(), get(), filter(), delete(), excute(), create(), update(), len(), count() (count предпочтителен, т.к подкапотом len вытаскивает все объекты и только затем считает, т.е происходят лишние запросы. а метод count() сразу вытаскивает количество из базы данных), list(), bool() и т.д
+-> Что такое related_name - это обратная связь. С помощью ФК мы создаем связь между моделями от А к Б, а related_name обратная связь от Б к А. Например Юзер - Пост (author User FK), если p = <post object 1> можно через это поле узнать его автора р.author. А если хотим узнать у юзера все его посты то мы получаем через related_name='posts', т.е user.posts = queryset постов. Если явно не указывать related_name, то посты можно вывести через user.posts_set
+-> менеджер контекста - это with, используется with open, with (чтото было при создании юзера)
+
+
+_________________________________________
+
+Создаем сериалайзер для регистрации
+класс регистерсериалайзер, 
+переопределяем класс мета по нужным полям,
+чтобы получить модельку юзера импортируем get_user_model
+дополняем атрибуты класса passw, passw_conf
+проверяем на валидацию их.
+Проверяем на валидацию остальные поля, чтобы вытащить ошибку на уровне заполнения формы, а не базы данных
+
+        from rest_framework import serializers
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        class RegisterSerializer(serializers.ModelSerializer):
+            password = serializers.CharField(min_length=6, required=True)
+            password_confirmation = serializers.CharField(min_length=6, required=True)
+            class Meta:
+                model = User
+                fields = ('password',
+                          'password_confirmation',
+                          'username',
+                          'email',
+                          'name',
+                          )
+            def validate_username(self, value):
+                if User.objects.filter(username=value).exists():
+                    raise serializers.ValidationError('Пользователь с таким username уже существует')
+                return value
+            def validate_email(self, value):
+                if User.objects.filter(email=value).exists():
+                    raise serializers.ValidationError('Пользователь с таким email уже существует')
+                return value
+            def validate(self, attrs):
+                password = attrs.get('password')
+                password_confirmation = attrs.pop('password_confirmation')
+                if password != password_confirmation:
+                    raise serializers.ValidationError('Пароль не совпадает!')
+                return  attrs
+
+_____________________________________
+
+Пишем вьюшку
+??reuqest.data - тело нашего запроса??
+переопределяем метод post для регистрации
+
+        class RegisterView(APIView):
+
+            def post(self, request):
+                data = request.data
+                serializer = RegisterSerializer(data=data)
+                if serializer.is_valid(raise_exception=True):
+                    user = serializer.save()
+                    send_activation_email(user)
+                    return Response('Аккаунт успешно создан', status=status.HTTP_201_CREATED)
+
+
+status - необязательный параметр в Response
+______________________
+для отправки кода активации настроить settings.py
+
+        EMAIL_BACKEND = 'django.core.mail.backend.smtp.EmailBackend'
+        EMAIL_HOST = 'smtp.gmail.com'
+        EMAIL_USE_TLS = True
+        EMAIL_PORT = 587
+        EMAIL_HOST_USER = config('GMAIL_USER')
+        EMAIL_HOST_PASSWORD = config('GMAIL_PASSWORD')
+
+сздать .env на уровне manage.py
+
+____________________________
+в аккаунте создаем файл utils.py
+
+        from django.core.mail import send_mail
+
+        def send_activation_email(user):
+            subject = 'Спасибо за регистрацию на нашем сайте.'
+            body = 'Спасибо за регистрацию на нашем сайте.\n'\
+                'Для активации перейдите по следующей ссылке:\n'\
+                f'http://127.0.0.1:8000/v1/account/activate/{user.activation_code}/'
+            from_email = 'e-shop@django.kg'
+            recipients = [user.email]
+            send_mail(subject=subject,
+                      message=body,
+                      from_email=from_email,
+                      recipient_list=recipients,
+                      fail_silently=False)
+
+
+дополняем в классе регистервью функцию отправки мэйла
+        if serializer.is_valid(raise_exception=True):
+                    user = serializer.save()
+                    send_activation_email(user)
+                    return Response('...')
+____________________
+пишем url.py
+        urlpatterns = [
+            path('register/', RegisterView.as_view()),
+            path('activate/<str:activation_code>/', ActivationView.as_view())]
+
+____________
+пишем вьюшку для активации
+
+        class ActivationView(APIView):
+
+            def get(self, request, activation_code):
+                user = get_object_or_404(get_user_model(), activation_code=activation_code)
+                user.is_active = True
+                user.activation_code = ''
+                user.save()
+                return Response('Ваш аккаунт успешно активирован', status=status.HTTP_200_OK)
+            
+
+____
+
+Переопределяем метод save() в сериалайзере
+            def save(self, **kwargs):
+                username = self.validated_data.get('username')
+                email = self.validated_data.get('email')
+                password = self.validated_data.get('password')
+                name = self.validated_data.get('name')
+                user = User.objects.create_user(
+                    username=username, email=email, password=password, name=name
+                )
+                return user
+
+
+____________________
+проверяем в постмене
+запрос: post  ->  url: /v1/account/register/  -> send
+выбираем вкладку body, выбираем form-data, заполняем нужные поля, отправляем запрос
+
+___________________________
+
+Аутентификация бывает нескольких видов:
+-> через токены
+-> через сейсиями
+-> jwt token - более защищенный. Когда человек логинится он дает аксес-токен на (5 мин) (там хранится инфа о юзере) и рефреш-токен для обновления
+
+
+class LoginView(ObtainAuthToken):
+импорт с authtoken
+регистрируем в installed_apps
+
+
+
+
+
+
+пишем сериалайзер для логина
+write_only=True - отображается только при отправке данных
+запрос находится во вьюшке, в сериалайзер передается контекст, который можно там использовать
+
+
+__________________________18.01.2021__________
+Update & Parshal
+
+Какие методы http запросов есть? 
+-> post, get, patch, delete, put
+Что такое CRUD?
+-> create, read, update, delete
+Какие http методы соответсвуют краду
+-> read - get, create - post, update - put patch, delete - delete
+Какие generic классы существуют на темплейтках
+-> list View, deteil view, update view, 
+Какие generic классы существуют на апишках
+-> retreive api view, list api view, create api view, update api view, destroy api view
+MVC & MVT отличие
+-> 
+Что такое вью сеты?
+-> Можно использовать вместо generic для того чтобы следовать принципу dry. В одной вьюшке определено несколько представлений. Модел Вью Сет
+
+
+_____________________19.01.2021______________
+
+Permissions наследуемые классы
+-> IsAuthenticated
+-> IsAdmin
+-> AlowAny
+-> IsAuthenticatedOrReadOnly
+все они наследуются от класса Base Permission
+
+
+в каком атрибуте храняться параметры запроса?
+в темплейтках - в атрибуте 'get' (request.GET = {'aa': 'bb'}
+в api - в query_params (request.query_params.get('q'))
+
+с помощью кью можно делать несколько заросов в бд
+
+
+________________Pagination________________
+общая пагинация для всех листингов настраивается глобально в settings.py:
+            'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+            'PAGE_SIZE': 1
+
+для отдельой пагинации для каждого листинга нужно унаследоваться от PageNumberPagination и переопределить page_size = 1
+
+pagination class ect' tol'ko v List
+
+
+
+__________________Search_______________
+
+1 способ:  написать свой action
+2: переопределить метод get_queryset
+3: отдельную вьюшку
+
+
+_____________Filter___________________
+
+установить django-filter 
+создадим файл для фильтрации
+
+___________permission____
+
+
+
+
+
+
+
+
+
+
+
+
+
+
