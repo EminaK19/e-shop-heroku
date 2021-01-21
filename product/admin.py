@@ -1,10 +1,12 @@
 from django.contrib import admin
-from .models import Category, Product, ProductImage
+from .models import Category, Product, ProductImage, Comment
+
 
 class ImageInline(admin.TabularInline):
     model = ProductImage
     extra = 3
     fields = ('image', ) # list or tuple
+
 
 class ProductAdmin(admin.ModelAdmin):
     inlines = [
@@ -13,5 +15,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = ('uuid', 'title', 'price')
     list_display_links = ('uuid', 'title')
 
+
 admin.site.register(Category)
 admin.site.register(Product, ProductAdmin)
+admin.site.register(Comment)

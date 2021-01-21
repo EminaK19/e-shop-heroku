@@ -1,11 +1,14 @@
+from django.contrib.auth import get_user_model
 from django.db import models
 import uuid
 from pytils.translit import slugify
 from time import time
 
+
 def gen_slug(s):
     slug = slugify(s)
     return slug + '-' + str(int(time()))
+
 
 class Category(models.Model):
     name = models.CharField(max_length=255, unique=True)
@@ -49,7 +52,18 @@ class Product(models.Model):
     #     # ordering = ('-price')
 #     сортировка по цене поумолчанию
 
+
 class ProductImage(models.Model):
     image = models.ImageField(upload_to='products')
     product = models.ForeignKey(Product, related_name='images',
                                 on_delete=models.CASCADE)
+
+
+class Comment(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='comments')
+    text = models.TextField(max_length=800)
+    author = models.ForeignKey(get_user_model(), on_delete=models.CASCADE, related_name='comments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Comment by {self.author} on {self.product}, created at {self.created_at}'
